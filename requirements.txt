@@ -6,3 +6,4 @@ seaborn
 biopython
 pyarrow
 h5py
+scikit-learn
