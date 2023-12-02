@@ -1,0 +1,21 @@
+defaults:
+  - override hydra/job_logging: none
+  - override hydra/hydra_logging: none
+data:
+  embedding_type: prott5
+  subset: strict
+model:
+  type: fnn
+  params:
+    hidden_layer_sizes: []
+training:
+  learning_rate: 1e-3
+  n_splits: 5
+  max_epochs: 10
+  batch_size: 256
+validation:
+  batch_size: 1024
+hydra:
+  output_subdir: null
+  run:
+    dir: .

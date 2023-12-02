@@ -1,2 +1,10 @@
-data/
+# IDE-specific
+.vscode/
+
+# Standard Python stuff
 __pycache__
+
+# ML stuff
+data/
+models/
+runs/

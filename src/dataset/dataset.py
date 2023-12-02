@@ -1,69 +1,58 @@
+from pathlib import Path
+from typing import Iterable, Union
+
 import h5py
 import numpy as np
+import polars as pl
 import torch
 from torch.utils.data import Dataset
+
+from src.dataset.trizod_scores.parse import read_score_csv
 
 
 class TriZodDataset(Dataset):
     def __init__(
-        self, h5_file: str, batch_size: int = 64, shuffle: bool = True
+        self,
+        embedding_file: Union[Path, str],
+        score_file: Union[Path, str],
+        whitelist_ids: Iterable[str],
+        cluster_df: pl.DataFrame,
     ) -> None:
-        self.data = h5py.File(h5_file, "r")
-        self.length = len(self.data["cluster"])
-        self.cluster_names = np.array(list(self.data["cluster"].keys()))
-        self.batch_size = batch_size
+        embeddings = {
+            id: torch.tensor(emb[()]) for id, emb in h5py.File(embedding_file).items()
+        }
+        scores = (
+            read_score_csv(score_file).group_by(pl.col("ID")).agg(pl.col("pscores"))
+        )
+        cluster_df = cluster_df.filter(
+            pl.col("cluster_representative_id").is_in(whitelist_ids)
+        )
+        self.cluster_representative_ids = (
+            cluster_df.select("cluster_representative_id").to_series().to_list()
+        )
+        self.all_ids = cluster_df.select("sequence_id").to_series().to_list()
+        if cluster_df is not None:
+            self.clusters = {
+                row[0]: row[1]
+                for row in cluster_df.group_by("cluster_representative_id")
+                .agg(pl.col("sequence_id"))
+                .iter_rows()
+            }
+        else:
+            self.clusters = None
 
-        cluster_idx = torch.arange(self.length)
-        if shuffle:
-            indexes = torch.randperm(cluster_idx.shape[0])
-            cluster_idx = cluster_idx[indexes]
-
-        self.batches = torch.split(cluster_idx, self.batch_size)
-
-        self.train = np.arange(len(self.batches))
-        self.test = np.array([])
-        self.train_iter = iter(self.train)
-        self.test_iter = iter(self.test)
-        self.is_training = True
+        self.scores = {
+            row[0]: torch.tensor(np.array(row[1], dtype=np.float32))
+            for row in scores.filter(pl.col("ID").is_in(self.all_ids)).iter_rows()
+        }
+        self.embeddings = {id: embeddings[id] for id in self.all_ids}
+        self.nan_masks = {id: ~score.isnan() for id, score in self.scores.items()}
 
     def __len__(self):
-        return len(self.train) if self.is_training else len(self.test)
+        return len(self.cluster_representative_ids)
 
-    def __getitem__(self, idx: int):
-        cluster = self.cluster_names[
-            self.batches[
-                next(self.train_iter) if self.is_training else next(self.test_iter)
-            ]
-        ]
-        member = [np.random.choice(self.data["cluster"][c]) for c in cluster]
-
-        embeddings = [
-            torch.tensor(self.data["embedding"][m], dtype=torch.float32) for m in member
-        ]
-        trizod = [
-            torch.tensor(self.data["trizod"][m], dtype=torch.float32) for m in member
-        ]
-
-        longest = max([len(e) for e in embeddings])
-        padding_len = [longest - len(e) for e in embeddings]
-        mask = torch.stack(
-            [
-                torch.concat((~t.isnan(), torch.zeros(padding_len[i])))
-                for i, t in enumerate(trizod)
-            ],
-            0,
-        )
-
-        embeddings = torch.nn.utils.rnn.pad_sequence(embeddings).permute(1, 0, 2)
-        trizod = torch.nn.utils.rnn.pad_sequence(trizod).permute(1, 0)
-
-        return embeddings, trizod, mask
-
-    def set_train_test(self, train: np.array, test: np.array):
-        self.train = train
-        self.test = test
-        self.train_iter = iter(train)
-        self.test_iter = iter(test)
-
-    def set_mode(self, mode: str):
-        self.is_training = True if mode == "train" else False
+    def __getitem__(self, id: str):
+        embedding = self.embeddings[id]
+        trizod = self.scores[id]
+        mask = self.nan_masks[id]
+        return embedding, trizod, mask
