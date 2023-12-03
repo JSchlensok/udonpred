@@ -1,4 +1,5 @@
 biopython
+flatdict
 h5py
 hydra-core
 jupyter

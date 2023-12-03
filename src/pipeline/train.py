@@ -10,6 +10,7 @@ import torch
 import torchmetrics as tm
 import typer
 from Bio import SeqIO
+from flatdict import FlatDict
 from maskedtensor import masked_tensor
 from omegaconf import DictConfig
 from rich import progress
@@ -248,8 +249,7 @@ def main(config: DictConfig):
                 pbar.advance(overall_progress)
 
         logger.info("Finished training, tidying up...")
-        # TODO remove Hydra config from config
-        mlflow.log_params(config)
+        mlflow.log_params(FlatDict(config, delimiter='.'))
         # TODO save models
 
 
