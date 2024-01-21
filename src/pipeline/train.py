@@ -1,9 +1,12 @@
+import gc
+import logging
+import json
 import warnings
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Literal
 
 import hydra
-import mlflow
 import numpy as np
 import polars as pl
 import torch
@@ -11,9 +14,10 @@ import torchmetrics as tm
 import typer
 from Bio import SeqIO
 from maskedtensor import masked_tensor
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 from rich import progress
 from sklearn.model_selection import KFold
+from torch.utils.tensorboard import SummaryWriter
 from tqdm import TqdmExperimentalWarning
 from tqdm.rich import tqdm
 
@@ -23,13 +27,12 @@ from src.dataset.utils import ClusterSampler, pad_collate
 from src.models import FNN, SETHClone
 from src.utils.logging import setup_logger
 
-embedding_dimensions = {"prott5": 1024, "esm2_3b": 2560}
+embedding_dimensions = {"prott5": 1024, "esm2_3b": 2560, "prostt5": 1024}
 
 model_classes = {"fnn": FNN, "cnn": SETHClone}
 
 
-# TODO parametrize config name
-@hydra.main(version_base=None, config_path="../../parameters", config_name="linreg")
+@hydra.main(version_base=None, config_path="../../parameters", config_name="fnn")
 def main(config: DictConfig):
     logger = setup_logger()
     warnings.filterwarnings("ignore", category=TqdmExperimentalWarning)
@@ -50,9 +53,11 @@ def main(config: DictConfig):
     model_config = config.model.params
 
     # TODO parametrize
+    run_name = f"{datetime.now():%m-%d %H:%M}_{subset}_{embedding_type}_{config.model.type}"
     project_root = Path.cwd()
-    mlflow_dir = project_root / "runs"
-    model_dir = project_root / "models"
+    artifact_dir = project_root / "models"
+    model_dir = artifact_dir / f"{run_name}_epoch_{max_epochs}"
+    model_dir.mkdir(exist_ok=True, parents=True)
 
     logger.info("Setting up Torch")
     if torch.cuda.is_available():
@@ -65,7 +70,7 @@ def main(config: DictConfig):
         use_amp = False
 
     logger.info(
-        f"Using device {device} and automatic mixed precision wit default dtype {default_dtype}"
+        f"Using device {device} and automatic mixed precision with default dtype {default_dtype}"
     )
 
     torch.set_default_device(device)
@@ -84,174 +89,150 @@ def main(config: DictConfig):
 
     kfold = KFold(n_splits=n_splits, shuffle=False)
     splits = list(kfold.split(sequence_ids))
-    logger.info("Loading training data")
-    train_datasets = [
-        TriZodDataset(
-            embedding_file,
-            trizod_score_file,
-            sequence_ids[train_indices],
-            all_cluster_assignments.filter(
-                pl.col("cluster_representative_id").is_in(sequence_ids[train_indices])
-            ),
-        )
-        for train_indices, _ in tqdm(splits, desc="Loading training data", leave=False)
-    ]
-    train_dataloaders = [
-        torch.utils.data.DataLoader(
-            ds,
-            batch_size=train_batch_size,
-            sampler=ClusterSampler(ds.clusters, shuffle=True),
-            collate_fn=pad_collate,
-        )
-        for ds in train_datasets
-    ]
-    logger.info("Loading validation data")
-    val_datasets = [
-        TriZodDataset(
-            embedding_file,
-            trizod_score_file,
-            sequence_ids[val_indices],
-            all_cluster_assignments.filter(
-                pl.col("cluster_representative_id").is_in(sequence_ids[val_indices])
-            ),
-        )
-        for _, val_indices in tqdm(splits, desc="Loading validation data", leave=False)
-    ]
-    val_dataloaders = [
-        torch.utils.data.DataLoader(
-            ds,
-            batch_size=val_batch_size,
-            sampler=ClusterSampler(ds.clusters, active=False),
-            collate_fn=pad_collate,
-        )
-        for ds in val_datasets
-    ]
 
-    logger.info("Setting up models")
-    models = [
-        model_class(n_features=embedding_dim, **model_config) for _ in range(n_splits)
-    ]
-    optimizers = [
-        torch.optim.AdamW(model.parameters(), lr=learning_rate) for model in models
-    ]
-
-    # TODO add option for disabling Spearman computation on validation set
     # Set up metrics
-    spearman = tm.regression.SpearmanCorrCoef()
-
     criterion = torch.nn.MSELoss()
 
-    # TODO parametrize
-    aggregation_levels = ["epoch", "fold"]
+    # TODO add option for more metrics
     split_names = ["train", "val"]
-    metric_names = ["loss", "spearman"]
-    metrics = {
-        aggregation_level: {
-            split: {metric: tm.aggregation.MeanMetric() for metric in metric_names}
-            for split in split_names
+    metric_names = ["loss"]
+    metrics = {split: {metric_name: tm.aggregation.MeanMetric() for metric_name in metric_names} for split in split_names}
+    foldwise_metric_values = {
+        split_name: {
+            metric_name: {
+                fold: [] for fold in range(n_splits)
+            }
+            for metric_name in metric_names
         }
-        for aggregation_level in aggregation_levels
+        for split_name in split_names
     }
 
-    mlflow.set_tracking_uri("file://" + str(mlflow_dir))
-    mlflow
-    with mlflow.start_run() as run:
-        with progress.Progress(
-            *progress.Progress.get_default_columns(), progress.TimeElapsedColumn()
-        ) as pbar:
-            # TODO log dataset as artifact
-            overall_progress = pbar.add_task("Overall", total=max_epochs)
+    with progress.Progress(
+        *progress.Progress.get_default_columns(), progress.TimeElapsedColumn()
+    ) as pbar:
+        overall_progress = pbar.add_task("Overall", total=n_splits)
+        for fold in range(n_splits):
+            train_indices, val_indices = splits[fold]
+            logger.info("Loading training data")
+            train_ds = TriZodDataset(
+                embedding_file,
+                trizod_score_file,
+                sequence_ids[train_indices],
+                all_cluster_assignments.filter(
+                    pl.col("cluster_representative_id").is_in(sequence_ids[train_indices])
+                ),
+                device=device
+            )
+            train_dl = torch.utils.data.DataLoader(
+                train_ds,
+                batch_size=train_batch_size,
+                sampler=ClusterSampler(train_ds.clusters, shuffle=True),
+                collate_fn=pad_collate
+            )
+            logger.info("Loading validation data")
+            val_ds = TriZodDataset(
+                embedding_file,
+                trizod_score_file,
+                sequence_ids[val_indices],
+                all_cluster_assignments.filter(
+                    pl.col("cluster_representative_id").is_in(sequence_ids[val_indices])
+                ),
+                device=device
+            )
+            val_dl = torch.utils.data.DataLoader(
+                val_ds,
+                batch_size=train_batch_size,
+                sampler=ClusterSampler(val_ds.clusters, shuffle=True),
+                collate_fn=pad_collate
+            )
+
+            logger.info("Setting up model")
+            model = model_class(n_features=embedding_dim, **model_config)
+            optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
+
+            # TODO add option to toggle off
+            scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", factor=0.1, patience=10)
+
+            fold_progress = pbar.add_task(f"Fold {fold}", total=max_epochs)
             for epoch in range(max_epochs):
-                for split_name, metric_name in zip(split_names, metric_names):
-                    metrics["epoch"][split_name][metric_name].reset()
+                for split_name in split_names:
+                  for metric_name in metric_names:
+                      metrics[split_name][metric_name].reset()
 
-                epoch_progress = pbar.add_task(f"Epoch {epoch}", total=n_splits)
+                train_progress = pbar.add_task(
+                    f"Epoch {epoch+1} training  ", total=len(train_dl)
+                )
+                # TODO track loss per batch
+                for embs, trizod, mask in train_dl:
+                    with torch.autocast(device_type=device, dtype=default_dtype):
+                        model.zero_grad()
+                        model.train()
+                        pred = model(embs).masked_select(mask)
+                        trizod = trizod.masked_select(mask)
+                        loss = criterion(pred, trizod)
 
-                for fold in range(n_splits):
-                    model = models[fold]
-                    optimizer = optimizers[fold]
-                    train_dl = train_dataloaders[fold]
-                    val_dl = val_dataloaders[fold]
+                    scaler.scale(loss).backward()
+                    scaler.step(optimizer)
+                    scaler.update()
+                    optimizer.zero_grad(set_to_none=True)
 
-                    train_progress = pbar.add_task(
-                        f"Fold {fold} training  ", total=len(train_dl)
+                    metrics["train"]["loss"].update(
+                        loss.detach(), embs.shape[0]
                     )
-                    for split_name, metric_name in zip(split_names, metric_names):
-                        metrics["fold"][split_name][metric_name].reset()
+                    pbar.advance(train_progress)
 
-                    for embs, trizod, mask in train_dl:
-                        with torch.autocast(device_type=device, dtype=default_dtype):
-                            model.zero_grad()
-                            model.train()
+                pbar.remove_task(train_progress)
+
+                val_progress = pbar.add_task(
+                    f"Epoch {epoch+1} validation", total=len(val_dl)
+                )
+
+                model.eval()
+                with torch.no_grad():
+                    for embs, trizod, mask in val_dl:
+                        with torch.autocast(
+                            device_type=device, dtype=default_dtype
+                        ):
                             pred = model(embs).masked_select(mask)
                             trizod = trizod.masked_select(mask)
-                            loss = criterion(pred, trizod)
-
-                        scaler.scale(loss).backward()
-                        scaler.step(optimizer)
-                        scaler.update()
-                        optimizer.zero_grad(set_to_none=True)
-
-                        metrics["fold"]["train"]["loss"].update(
-                            loss.detach(), embs.shape[0]
-                        )
-                        pbar.advance(train_progress)
-
-                    pbar.remove_task(train_progress)
-
-                    val_progress = pbar.add_task(
-                        f"Fold {fold} validation", total=len(val_dl)
-                    )
-
-                    model.eval()
-                    with torch.no_grad():
-                        for embs, trizod, mask in val_dl:
-                            with torch.autocast(
-                                device_type=device, dtype=default_dtype
-                            ):
-                                pred = model(embs).masked_select(mask)
-                                trizod = trizod.masked_select(mask)
-                                batch_size = embs.shape[0]
-                                metrics["fold"]["val"]["loss"].update(
-                                    criterion(pred, trizod).detach(), batch_size
-                                )
-                                metrics["fold"]["val"]["spearman"].update(
-                                    spearman(pred, trizod).detach(), batch_size
-                                )
-
-                            pbar.advance(val_progress)
-                        pbar.remove_task(val_progress)
-
-                    for split_name in split_names:
-                        for metric_name in metric_names:
-                            metrics["epoch"][split_name][metric_name].update(
-                                metrics["fold"][split_name][metric_name].compute()
+                            metrics["val"]["loss"].update(
+                                criterion(pred, trizod).detach(), embs.shape[0]
                             )
-                    pbar.advance(epoch_progress)
 
-                mlflow.log_metric(
-                    "train_loss",
-                    metrics["epoch"]["train"]["loss"].compute().item(),
-                    step=epoch,
-                )
-                mlflow.log_metric(
-                    "val_loss",
-                    metrics["epoch"]["val"]["loss"].compute().item(),
-                    step=epoch,
-                )
-                mlflow.log_metric(
-                    "val_spearman",
-                    metrics["epoch"]["val"]["spearman"].compute().item(),
-                    step=epoch,
-                )
-                pbar.remove_task(epoch_progress)
-                pbar.advance(overall_progress)
+                        pbar.advance(val_progress)
+                    pbar.remove_task(val_progress)
 
-        logger.info("Finished training, tidying up...")
-        # TODO remove Hydra config from config
-        mlflow.log_params(config)
-        # TODO save models
+                for split_name in split_names:
+                    for metric_name in metric_names:
+                        foldwise_metric_values[split_name][metric_name][fold].append(metrics[split_name][metric_name].compute().item())
 
+                scheduler.step(foldwise_metric_values["val"]["loss"][fold][-1])
+                pbar.advance(fold_progress)
+            pbar.remove_task(fold_progress)
+
+            model_path = model_dir / f"fold_{fold}.pt"
+            logging.info(f"Saving model {fold} to {model_path}")
+            torch.save(model.state_dict(), model_path)
+
+            with open(model_dir / "config.yml", "w+") as f:
+                OmegaConf.save(config=config, f=f)
+
+            del train_dl
+            del train_ds
+            del val_dl
+            del val_ds
+            torch.cuda.empty_cache()
+            gc.collect()
+            pbar.advance(overall_progress)
+
+    logger.info("Finished training, tidying up...")
+    writer = SummaryWriter(log_dir="runs/" + run_name)
+    for epoch in range(max_epochs):
+        train_loss = np.array([foldwise_metric_values["train"]["loss"][fold][epoch] for fold in range(n_splits)]).mean()
+        val_loss = np.array([foldwise_metric_values["val"]["loss"][fold][epoch] for fold in range(n_splits)]).mean()
+        writer.add_scalar("loss/train", train_loss, epoch+1)
+        writer.add_scalar("loss/val", val_loss, epoch+1)
+    
 
 if __name__ == "__main__":
     main()
