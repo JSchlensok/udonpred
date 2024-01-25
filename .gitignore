@@ -4,8 +4,11 @@
 # Standard Python stuff
 __pycache__
 
+/src/**/*.ipynb
+
 # ML stuff
 data/
 models/
 multirun/
 runs/
+/figures/

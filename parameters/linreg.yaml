@@ -8,6 +8,7 @@ model:
   type: fnn
   params:
     hidden_layer_sizes: []
+    dropout_rate: 0.4
 training:
   learning_rate: 1e-3
   n_splits: 5
