@@ -3,7 +3,5 @@ channels:
 - conda-forge
 - pytorch
 dependencies:
-- mlflow
-- pytorch
+- pytorch=2.1.2
 - pytorch-cuda=12.1
-
