@@ -1,3 +1,4 @@
+from functools import lru_cache
 from pathlib import Path
 from typing import Iterable, Union
 
@@ -17,9 +18,9 @@ class TriZodDataset(Dataset):
         score_file: Union[Path, str],
         whitelist_ids: Iterable[str],
         cluster_df: pl.DataFrame,
+        device: str | torch.device
     ) -> None:
         embeddings = {
-            id: torch.tensor(emb[()]) for id, emb in h5py.File(embedding_file).items()
         }
         scores = (
             read_score_csv(score_file).group_by(pl.col("ID")).agg(pl.col("pscores"))
@@ -42,17 +43,20 @@ class TriZodDataset(Dataset):
             self.clusters = None
 
         self.scores = {
-            row[0]: torch.tensor(np.array(row[1], dtype=np.float32))
+            row[0]: torch.tensor(np.array(row[1], dtype=np.float32), device=device)
             for row in scores.filter(pl.col("ID").is_in(self.all_ids)).iter_rows()
         }
-        self.embeddings = {id: embeddings[id] for id in self.all_ids}
+        self.embeddings = {
+            id: torch.tensor(np.array(emb[()]), device=device) for id, emb in h5py.File(embedding_file).items()
+            if id in self.all_ids
+        }
         self.nan_masks = {id: ~score.isnan() for id, score in self.scores.items()}
 
     def __len__(self):
         return len(self.cluster_representative_ids)
 
     def __getitem__(self, id: str):
-        embedding = self.embeddings[id]
-        trizod = self.scores[id]
-        mask = self.nan_masks[id]
+        embedding = self.embeddings[id].clone()
+        trizod = self.scores[id].clone()
+        mask = self.nan_masks[id].clone()
         return embedding, trizod, mask

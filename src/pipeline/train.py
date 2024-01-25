@@ -1,7 +1,11 @@
 import gc
 import logging
 import json
+import gc
+import logging
+import json
 import warnings
+from datetime import datetime
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Literal
@@ -15,8 +19,10 @@ import typer
 from Bio import SeqIO
 from maskedtensor import masked_tensor
 from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig, OmegaConf
 from rich import progress
 from sklearn.model_selection import KFold
+from torch.utils.tensorboard import SummaryWriter
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import TqdmExperimentalWarning
 from tqdm.rich import tqdm
@@ -27,11 +33,12 @@ from src.dataset.utils import ClusterSampler, pad_collate
 from src.models import FNN, SETHClone
 from src.utils.logging import setup_logger
 
-embedding_dimensions = {"prott5": 1024, "esm2_3b": 2560}
+embedding_dimensions = {"prott5": 1024, "esm2_3b": 2560, "prostt5": 1024}
 
 model_classes = {"fnn": FNN, "cnn": SETHClone}
 
 
+@hydra.main(version_base=None, config_path="../../parameters", config_name="fnn")
 @hydra.main(version_base=None, config_path="../../parameters", config_name="fnn")
 def main(config: DictConfig):
     logger = setup_logger()
@@ -58,6 +65,9 @@ def main(config: DictConfig):
     artifact_dir = project_root / "models"
     model_dir = artifact_dir / f"{run_name}_epoch_{max_epochs}"
     model_dir.mkdir(exist_ok=True, parents=True)
+    artifact_dir = project_root / "models"
+    model_dir = artifact_dir / f"{run_name}_epoch_{max_epochs}"
+    model_dir.mkdir(exist_ok=True, parents=True)
 
     logger.info("Setting up Torch")
     if torch.cuda.is_available():
@@ -70,7 +80,7 @@ def main(config: DictConfig):
         use_amp = False
 
     logger.info(
-        f"Using device {device} and automatic mixed precision with default dtype {default_dtype}"
+        f"Using device {device} and automatic mixed precision withh default dtype {default_dtype}"
     )
 
     torch.set_default_device(device)
@@ -157,7 +167,21 @@ def main(config: DictConfig):
                 for split_name in split_names:
                   for metric_name in metric_names:
                       metrics[split_name][metric_name].reset()
+                for split_name in split_names:
+                  for metric_name in metric_names:
+                      metrics[split_name][metric_name].reset()
 
+                train_progress = pbar.add_task(
+                    f"Epoch {epoch+1} training  ", total=len(train_dl)
+                )
+                # TODO track loss per batch
+                for embs, trizod, mask in train_dl:
+                    with torch.autocast(device_type=device, dtype=default_dtype):
+                        model.zero_grad()
+                        model.train()
+                        pred = model(embs).masked_select(mask)
+                        trizod = trizod.masked_select(mask)
+                        loss = criterion(pred, trizod)
                 train_progress = pbar.add_task(
                     f"Epoch {epoch+1} training  ", total=len(train_dl)
                 )
@@ -174,14 +198,26 @@ def main(config: DictConfig):
                     scaler.step(optimizer)
                     scaler.update()
                     optimizer.zero_grad(set_to_none=True)
+                    scaler.scale(loss).backward()
+                    scaler.step(optimizer)
+                    scaler.update()
+                    optimizer.zero_grad(set_to_none=True)
 
+                    metrics["train"]["loss"].update(
+                        loss.detach(), embs.shape[0]
+                    )
+                    pbar.advance(train_progress)
                     metrics["train"]["loss"].update(
                         loss.detach(), embs.shape[0]
                     )
                     pbar.advance(train_progress)
 
                 pbar.remove_task(train_progress)
+                pbar.remove_task(train_progress)
 
+                val_progress = pbar.add_task(
+                    f"Epoch {epoch+1} validation", total=len(val_dl)
+                )
                 val_progress = pbar.add_task(
                     f"Epoch {epoch+1} validation", total=len(val_dl)
                 )
@@ -197,7 +233,20 @@ def main(config: DictConfig):
                             metrics["val"]["loss"].update(
                                 criterion(pred, trizod).detach(), embs.shape[0]
                             )
+                model.eval()
+                with torch.no_grad():
+                    for embs, trizod, mask in val_dl:
+                        with torch.autocast(
+                            device_type=device, dtype=default_dtype
+                        ):
+                            pred = model(embs).masked_select(mask)
+                            trizod = trizod.masked_select(mask)
+                            metrics["val"]["loss"].update(
+                                criterion(pred, trizod).detach(), embs.shape[0]
+                            )
 
+                        pbar.advance(val_progress)
+                    pbar.remove_task(val_progress)
                         pbar.advance(val_progress)
                     pbar.remove_task(val_progress)
 
@@ -224,6 +273,14 @@ def main(config: DictConfig):
             torch.cuda.empty_cache()
             pbar.advance(overall_progress)
 
+    logger.info("Finished training, tidying up...")
+    writer = SummaryWriter(log_dir="runs/" + run_name)
+    for epoch in range(max_epochs):
+        train_loss = np.array([foldwise_metric_values["train"]["loss"][fold][epoch] for fold in range(n_splits)]).mean()
+        val_loss = np.array([foldwise_metric_values["val"]["loss"][fold][epoch] for fold in range(n_splits)]).mean()
+        writer.add_scalar("loss/train", train_loss, epoch+1)
+        writer.add_scalar("loss/val", val_loss, epoch+1)
+    
     logger.info("Finished training, tidying up...")
     writer = SummaryWriter(log_dir="runs/" + run_name)
     for epoch in range(max_epochs):

@@ -1,8 +1,8 @@
 biopython
-flatdict
 h5py
 hydra-core
 jupyter
+maskedtensor
 matplotlib
 numpy
 omegaconf
@@ -13,5 +13,6 @@ pyarrow
 rich
 scikit-learn
 seaborn
+tensorboard
 torchmetrics
 tqdm

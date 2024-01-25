@@ -7,8 +7,8 @@ __pycache__
 /src/**/*.ipynb
 
 # ML stuff
-data/
-models/
-multirun/
-runs/
+/data/
+/models/
+/multirun/
+/runs/
 /figures/
