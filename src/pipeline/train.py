@@ -32,13 +32,8 @@ from src.dataset.dataset import TriZodDataset
 from src.dataset.utils import ClusterSampler, pad_collate
 from src.models import FNN, SETHClone
 from src.utils.logging import setup_logger
+from src.utils import embedding_dimensions, model_classes
 
-embedding_dimensions = {"prott5": 1024, "esm2_3b": 2560, "prostt5": 1024}
-
-model_classes = {"fnn": FNN, "cnn": SETHClone}
-
-
-@hydra.main(version_base=None, config_path="../../parameters", config_name="fnn")
 @hydra.main(version_base=None, config_path="../../parameters", config_name="fnn")
 def main(config: DictConfig):
     logger = setup_logger()
@@ -130,7 +125,8 @@ def main(config: DictConfig):
                 sequence_ids[train_indices],
                 all_cluster_assignments.filter(
                     pl.col("cluster_representative_id").is_in(sequence_ids[train_indices])
-                )
+                ),
+                device=device
             )
             train_dl = torch.utils.data.DataLoader(
                 train_ds,
@@ -145,7 +141,8 @@ def main(config: DictConfig):
                 sequence_ids[val_indices],
                 all_cluster_assignments.filter(
                     pl.col("cluster_representative_id").is_in(sequence_ids[val_indices])
-                )
+                ),
+                device=device
             )
             val_dl = torch.utils.data.DataLoader(
                 val_ds,
@@ -167,9 +164,6 @@ def main(config: DictConfig):
                 for split_name in split_names:
                   for metric_name in metric_names:
                       metrics[split_name][metric_name].reset()
-                for split_name in split_names:
-                  for metric_name in metric_names:
-                      metrics[split_name][metric_name].reset()
 
                 train_progress = pbar.add_task(
                     f"Epoch {epoch+1} training  ", total=len(train_dl)
@@ -198,10 +192,6 @@ def main(config: DictConfig):
                     scaler.step(optimizer)
                     scaler.update()
                     optimizer.zero_grad(set_to_none=True)
-                    scaler.scale(loss).backward()
-                    scaler.step(optimizer)
-                    scaler.update()
-                    optimizer.zero_grad(set_to_none=True)
 
                     metrics["train"]["loss"].update(
                         loss.detach(), embs.shape[0]
@@ -213,11 +203,7 @@ def main(config: DictConfig):
                     pbar.advance(train_progress)
 
                 pbar.remove_task(train_progress)
-                pbar.remove_task(train_progress)
 
-                val_progress = pbar.add_task(
-                    f"Epoch {epoch+1} validation", total=len(val_dl)
-                )
                 val_progress = pbar.add_task(
                     f"Epoch {epoch+1} validation", total=len(val_dl)
                 )
@@ -233,21 +219,8 @@ def main(config: DictConfig):
                             metrics["val"]["loss"].update(
                                 criterion(pred, trizod).detach(), embs.shape[0]
                             )
-                model.eval()
-                with torch.no_grad():
-                    for embs, trizod, mask in val_dl:
-                        with torch.autocast(
-                            device_type=device, dtype=default_dtype
-                        ):
-                            pred = model(embs).masked_select(mask)
-                            trizod = trizod.masked_select(mask)
-                            metrics["val"]["loss"].update(
-                                criterion(pred, trizod).detach(), embs.shape[0]
-                            )
 
-                        pbar.advance(val_progress)
-                    pbar.remove_task(val_progress)
-                        pbar.advance(val_progress)
+                            pbar.advance(val_progress)
                     pbar.remove_task(val_progress)
 
                 for split_name in split_names:
@@ -273,14 +246,6 @@ def main(config: DictConfig):
             torch.cuda.empty_cache()
             pbar.advance(overall_progress)
 
-    logger.info("Finished training, tidying up...")
-    writer = SummaryWriter(log_dir="runs/" + run_name)
-    for epoch in range(max_epochs):
-        train_loss = np.array([foldwise_metric_values["train"]["loss"][fold][epoch] for fold in range(n_splits)]).mean()
-        val_loss = np.array([foldwise_metric_values["val"]["loss"][fold][epoch] for fold in range(n_splits)]).mean()
-        writer.add_scalar("loss/train", train_loss, epoch+1)
-        writer.add_scalar("loss/val", val_loss, epoch+1)
-    
     logger.info("Finished training, tidying up...")
     writer = SummaryWriter(log_dir="runs/" + run_name)
     for epoch in range(max_epochs):
