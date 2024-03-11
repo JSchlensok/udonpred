@@ -1,4 +1,5 @@
 import datetime
+import re
 from collections import OrderedDict
 from datetime import datetime as dt
 from pathlib import Path
@@ -12,6 +13,7 @@ import torch
 import typer
 import yaml
 from Bio import SeqIO
+from transformers import T5Tokenizer, T5EncoderModel
 
 from src.models import FNN
 from src.utils import embedding_dimensions
@@ -31,7 +33,7 @@ def main(
     output_dir: Annotated[Path, typer.Option("--output-directory", "-o")] = None
 ):
     script_start_time = dt.now()
-    
+
     model_dir = model_dir or Path.cwd() / "model"
     output_dir = output_dir or Path.cwd() / "out"
 
@@ -42,8 +44,14 @@ def main(
 
     model_config = yaml.safe_load((model_dir / "config.yml").open())
     
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    map_location = torch.device("cpu") if not torch.cuda.is_available() else None
+    if torch.cuda.is_available():
+        device = torch.device("cuda:0")
+        map_location = None
+    else:
+        device = torch.device("cpu")
+        map_location = torch.device("cpu")
+        torch.set_default_tensor_type(torch.DoubleTensor)
+
     model = FNN(n_features=embedding_dim, **model_config["model"]["params"])
     model.load_state_dict(torch.load(model_dir / "model.pt", map_location=map_location))
     model = model.double()
@@ -52,18 +60,30 @@ def main(
     disorder_output_path = output_dir / "disorder"
     disorder_output_path.mkdir(exist_ok=True, parents=True)
 
-    sequences = OrderedDict((rec.id, rec.seq) for rec in SeqIO.parse(fasta_file, "fasta"))
+    sequences = OrderedDict((rec.id, str(rec.seq)) for rec in SeqIO.parse(fasta_file, "fasta"))
     execution_times = []
 
     with progress.Progress(
         *progress.Progress.get_default_columns(), progress.TimeElapsedColumn()
     ) as pbar, torch.no_grad():
         if embedding_file is None:
-            # TODO generate embeddings
-            pass
+            embedding_progress = pbar.add_task("Computing embeddings", total=len(sequences))
+            tokenizer = T5Tokenizer.from_pretrained('Rostlab/ProstT5', do_lower_case=False)
+            encoder = T5EncoderModel.from_pretrained("Rostlab/ProstT5")
+            encoder.half() if torch.cuda.is_available() else encoder.double()
 
-        embeddings = {id: torch.tensor(np.array(emb[()]), device=device) for id, emb in h5py.File(embedding_file).items() if id in sequences.keys()}
-        overall_progress = pbar.add_task("Prediction progress", total=len(embeddings))
+            embeddings = {}
+            with torch.no_grad():
+                for id, sequence in sequences.items():
+                    seq = "<AA2fold>" + " ".join(list(re.sub(r"[UZOB]", "X", sequence)))
+                    ids = tokenizer.batch_encode_plus([seq], add_special_tokens=True, padding="longest", return_tensors='pt').to(device)
+                    embeddings[id] = encoder(ids.input_ids, attention_mask=ids.attention_mask).last_hidden_state[0, 1:len(sequence)+1]
+                    pbar.advance(embedding_progress)
+
+        else:
+            embeddings = {id: torch.tensor(np.array(emb[()]), device=device) for id, emb in h5py.File(embedding_file).items() if id in sequences.keys()}
+
+        overall_progress = pbar.add_task("Generating predictions", total=len(embeddings))
 
         for id, emb in embeddings.items():
             start_time = dt.now()

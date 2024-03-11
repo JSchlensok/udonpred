@@ -13,7 +13,9 @@ pyarrow
 rich
 scikit-learn
 seaborn
+sentencepiece
 tensorboard
 torchmetrics
+transformers
 typer
 tqdm
