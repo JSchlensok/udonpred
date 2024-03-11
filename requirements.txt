@@ -15,4 +15,5 @@ scikit-learn
 seaborn
 tensorboard
 torchmetrics
+typer
 tqdm
