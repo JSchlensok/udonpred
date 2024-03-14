@@ -18,11 +18,13 @@ from transformers import T5Tokenizer, T5EncoderModel
 from src.models import FNN
 from src.utils import embedding_dimensions
 
-def write_caid_file(directory: Path, protein_id: str, scores: torch.tensor, sequence: str) -> None:
-    with open(directory / (protein_id + ".caid"), "w+") as f:
-        f.write(">" + protein_id + "\n")
-        for i, (score, aa) in enumerate(zip(scores, sequence)):
-            f.write(f"{i+1}\t{aa}\t{score:.3f}\n")
+def generate_caid_format(protein_id: str, scores: torch.tensor, sequence: str) -> None:
+    lines = []
+    lines.append(">" + protein_id + "\n")
+    for i, (score, aa) in enumerate(zip(scores, sequence)):
+        lines.append(f"{i+1}\t{aa}\t{score:.3f}\n")
+
+    return lines
 
 # TODO parametrize number of cores
 # TODO try multithreading using joblib
@@ -30,7 +32,8 @@ def main(
     fasta_file: Annotated[Path, typer.Option("--input-fasta", "-i")],
     embedding_file: Annotated[Path, typer.Option("--embedding-file", "-e")] = None,
     model_dir: Annotated[Path, typer.Option("--model-directory")] = None,
-    output_dir: Annotated[Path, typer.Option("--output-directory", "-o")] = None
+    output_dir: Annotated[Path, typer.Option("--output-directory", "-o")] = None,
+    write_to_one_file: Annotated[bool, typer.Option("--write-to-one-file")] = False
 ):
     script_start_time = dt.now()
 
@@ -85,12 +88,20 @@ def main(
 
         overall_progress = pbar.add_task("Generating predictions", total=len(embeddings))
 
+        all_lines = []
+
         for id, emb in embeddings.items():
             start_time = dt.now()
             emb = emb.clone().to(device=device, dtype=torch.float64)
             pred = model(emb)
 
-            write_caid_file(disorder_output_path, id, pred, sequences[id])
+            lines = generate_caid_format(id, pred, sequences[id])
+            if write_to_one_file:
+                all_lines.extend(lines)
+            else:
+                with open(disorder_output_path / f"{id}.caid", "w+") as f:
+                    f.writelines(lines)
+                    
             end_time = dt.now()
             execution_time = end_time - start_time
             execution_times.append({"sequence": id, "milliseconds": execution_time / datetime.timedelta(milliseconds=1)})
@@ -98,9 +109,14 @@ def main(
             pbar.advance(overall_progress)
 
         csv_lines = pl.from_records(execution_times).write_csv(file=None)
+
         with open(output_dir / "timings.csv", "w+") as f:
             f.write(f"# Running test, started {script_start_time:%c}\n")
             f.write(csv_lines)
+
+        if write_to_one_file:
+            with open(disorder_output_path / "all.caid", "w+") as f:
+                f.writelines(all_lines)
 
 if __name__ == "__main__":
     typer.run(main)
