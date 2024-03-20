@@ -5,4 +5,6 @@ WORKDIR ./app
 RUN pip install -r requirements.txt
 RUN pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 
-ENTRYPOINT ["python", "-m", "src.pipeline.caid.run"]
+RUN python -m src.pipeline.caid.download_prostt5_weights
+
+ENTRYPOINT ["python", "-m", "src.pipeline.caid.run", "--prostt5-cache", "./prostt5_cache"]

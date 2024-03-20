@@ -1,4 +1,5 @@
 import datetime
+import logging
 import re
 from collections import OrderedDict
 from datetime import datetime as dt
@@ -31,6 +32,7 @@ def generate_caid_format(protein_id: str, scores: torch.tensor, sequence: str) -
 def main(
     fasta_file: Annotated[Path, typer.Option("--input-fasta", "-i")],
     embedding_file: Annotated[Path, typer.Option("--embedding-file", "-e")] = None,
+    prostt5_cache_directory: Annotated[Path, typer.Option("--prostt5-cache")] = None,
     model_dir: Annotated[Path, typer.Option("--model-directory")] = None,
     output_dir: Annotated[Path, typer.Option("--output-directory", "-o")] = None,
     write_to_one_file: Annotated[bool, typer.Option("--write-to-one-file")] = False
@@ -71,8 +73,9 @@ def main(
     ) as pbar, torch.no_grad():
         if embedding_file is None:
             embedding_progress = pbar.add_task("Computing embeddings", total=len(sequences))
-            tokenizer = T5Tokenizer.from_pretrained('Rostlab/ProstT5', do_lower_case=False)
-            encoder = T5EncoderModel.from_pretrained("Rostlab/ProstT5")
+            pretrained_path = prostt5_cache_directory or "Rostlab/ProstT5"
+            tokenizer = T5Tokenizer.from_pretrained(pretrained_path, do_lower_case=False)
+            encoder = T5EncoderModel.from_pretrained(pretrained_path)
             encoder.half() if torch.cuda.is_available() else encoder.double()
 
             embeddings = {}
@@ -84,6 +87,9 @@ def main(
                     pbar.advance(embedding_progress)
 
         else:
+            if pretrained_path:
+                logging.warning("Both a cache directory for encoder weights and a file with pre-computed embeddings were provided, so the encoder weights are ignored and the pre-computed embeddings used")
+
             embeddings = {id: torch.tensor(np.array(emb[()]), device=device) for id, emb in h5py.File(embedding_file).items() if id in sequences.keys()}
 
         overall_progress = pbar.add_task("Generating predictions", total=len(embeddings))
