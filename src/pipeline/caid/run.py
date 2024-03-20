@@ -87,7 +87,7 @@ def main(
                     pbar.advance(embedding_progress)
 
         else:
-            if pretrained_path:
+            if prostt5_cache_directory:
                 logging.warning("Both a cache directory for encoder weights and a file with pre-computed embeddings were provided, so the encoder weights are ignored and the pre-computed embeddings used")
 
             embeddings = {id: torch.tensor(np.array(emb[()]), device=device) for id, emb in h5py.File(embedding_file).items() if id in sequences.keys()}

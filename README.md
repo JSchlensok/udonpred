@@ -1,7 +1,7 @@
 ## Inference
 A Dockerfile is provided to run inference easily. Build it using `docker build -t <image_name> .`, and once built, generate predictions as follows:
 ```bash
-docker run -d -v <data_directory>:/app/data -v <output_directory>:/app/out <image_name> -i <path_to_input_fasta_file> [-e <path_to_embedding_h5_file>] [--write-to-one-file]
+docker run -it -v <data_directory>:/app/data -v <output_directory>:/app/out <image_name> -i <path_to_input_fasta_file> [-e <path_to_embedding_h5_file>] [--write-to-one-file]
 ```
 The `<data_directory>` needs to contain the input FASTA file and corresponding embeddings in H5 format (if existent). The `<output_directory>` is used to persist predictions and timing files.
 The input file paths need to be relative to the `/app` directory in the container, i.e. include the directory mounted to `/app/data`, e.g. `/data/file.fasta`.
