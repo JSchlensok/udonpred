@@ -16,7 +16,7 @@ import yaml
 from Bio import SeqIO
 from transformers import T5Tokenizer, T5EncoderModel
 
-from src.models import FNN
+from src.models import FNN, CNN
 from src.utils import embedding_dimensions
 
 def generate_caid_format(protein_id: str, scores: torch.tensor, sequence: str) -> None:
