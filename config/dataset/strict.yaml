@@ -1,0 +1,4 @@
+name: strict
+embedding_file: data/embeddings/unfiltered_all_prostt5_res.h5
+trizod_file: data/strict.csv
+cluster_file: data/clusters/strict_rest_clu.tsv

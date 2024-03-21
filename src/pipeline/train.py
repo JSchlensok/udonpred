@@ -11,7 +11,6 @@ import numpy as np
 import polars as pl
 import torch
 import torchmetrics as tm
-import typer
 from Bio import SeqIO
 from maskedtensor import masked_tensor
 from omegaconf import DictConfig, OmegaConf
@@ -32,15 +31,19 @@ embedding_dimensions = {"prott5": 1024, "esm2_3b": 2560, "prostt5": 1024}
 model_classes = {"fnn": FNN, "cnn": SETHClone}
 
 
-@hydra.main(version_base=None, config_path="../../parameters", config_name="fnn")
+@hydra.main(version_base=None, config_path="../../config", config_name="config")
 def main(config: DictConfig):
     logger = setup_logger()
     warnings.filterwarnings("ignore", category=TqdmExperimentalWarning)
 
     logger.info("Parsing parameters")
-    subset = config.data.subset
-    embedding_type = config.data.embedding_type
+    embedding_type = config.embedding_type
     embedding_dim = embedding_dimensions[embedding_type]
+
+    dataset = config.dataset.name
+    embedding_file = config.dataset.embedding_file
+    cluster_assignments_file = config.dataset.cluster_file
+    trizod_score_file = config.dataset.trizod_file
 
     train_batch_size = config.training.batch_size
     learning_rate = config.training.learning_rate
@@ -52,8 +55,7 @@ def main(config: DictConfig):
     model_class = model_classes[config.model.type]
     model_config = config.model.params
 
-    # TODO parametrize
-    run_name = f"{datetime.now():%m-%d %H:%M}_{subset}_{embedding_type}_{config.model.type}"
+    run_name = f"{datetime.now():%m-%d %H:%M}_{dataset}_{embedding_type}_{config.model.type}"
     project_root = Path.cwd()
     artifact_dir = project_root / "models"
     model_dir = artifact_dir / f"{run_name}_epoch_{max_epochs}"
@@ -79,10 +81,8 @@ def main(config: DictConfig):
     # TODO add option for training only one model
     logger.info("Initializing dataset")
     all_cluster_assignments = read_cluster_assignments(
-        f"data/clusters/{subset}_rest_clu.tsv"
+      cluster_assignments_file
     )
-    embedding_file = f"data/embeddings/unfiltered_all_{embedding_type}_res.h5"
-    trizod_score_file = f"data/{subset}.csv"
     sequence_ids = np.array(
         all_cluster_assignments.select("sequence_id").to_series(), dtype=str
     )
