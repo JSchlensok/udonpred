@@ -17,7 +17,7 @@ from Bio import SeqIO
 from transformers import T5Tokenizer, T5EncoderModel
 
 from src.models import FNN, CNN
-from src.utils import embedding_dimensions
+from src.utils import embedding_dimensions, model_classes
 
 def generate_caid_format(protein_id: str, scores: torch.tensor, sequence: str) -> None:
     lines = []
@@ -33,6 +33,7 @@ def main(
     fasta_file: Annotated[Path, typer.Option("--input-fasta", "-i")],
     embedding_file: Annotated[Path, typer.Option("--embedding-file", "-e")] = None,
     prostt5_cache_directory: Annotated[Path, typer.Option("--prostt5-cache")] = None,
+    model_type: Annotated[str, typer.Option("--model-type")] = "fnn",
     model_dir: Annotated[Path, typer.Option("--model-directory")] = None,
     output_dir: Annotated[Path, typer.Option("--output-directory", "-o")] = None,
     write_to_one_file: Annotated[bool, typer.Option("--write-to-one-file")] = False
@@ -44,7 +45,6 @@ def main(
 
     device = "cpu"
     embedding_type = "prostt5"
-    method_name = "FNN"
     embedding_dim = embedding_dimensions[embedding_type]
 
     model_config = yaml.safe_load((model_dir / "config.yml").open())
@@ -57,8 +57,9 @@ def main(
         map_location = torch.device("cpu")
         torch.set_default_tensor_type(torch.DoubleTensor)
 
-    model = FNN(n_features=embedding_dim, **model_config["model"]["params"])
-    model.load_state_dict(torch.load(model_dir / "model.pt", map_location=map_location))
+    model = model_classes[model_type](n_features=embedding_dim, **model_config["model"]["params"])
+    weight_file = next(iter(model_dir.glob("*.pt")))
+    model.load_state_dict(torch.load(weight_file, map_location=map_location))
     model = model.double()
 
     # Prepare file output
