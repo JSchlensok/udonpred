@@ -4,7 +4,12 @@ from torch.nn import Module
 
 
 class CNN(Module):
-    def __init__(self, n_features: int, hidden_layer: int, kernel_size: int = 5):
+    def __init__(self,
+        n_features: int,
+        hidden_layer: int,
+        kernel_size: int = 5,
+        apply_sigmoid: bool = True
+        ):
         super().__init__()
         self.model = nn.Sequential(
             nn.Conv2d(
@@ -21,11 +26,11 @@ class CNN(Module):
                 padding=(kernel_size // 2, 0),
             ),
         )
-        self.sigmoid = nn.Sigmoid()
+        self.sigmoid = nn.Sigmoid() if apply_sigmoid else None
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = x.permute(2, 0, 1)
-        return self.sigmoid(self.model(x))
-        #return self.model(x)
-
-    # self.model(x).squeeze(0)  # self.sigmoid(self.model(x)).squeeze(0)
+        x = self.model(x)
+        if self.sigmoid:
+            x = self.sigmoid(x)
+        return x

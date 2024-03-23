@@ -1,3 +1,4 @@
 type: cnn
 params:
   hidden_layer: 32
+  apply_sigmoid: True

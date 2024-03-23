@@ -5,7 +5,12 @@ import torch
 
 class FNN(torch.nn.Module):
     def __init__(
-        self, n_features: int, output_dim: int = 1, hidden_layer_sizes: list[int] = [], dropout_rate: Union[float, None] = None
+        self,
+        n_features: int,
+        output_dim: int = 1,
+        hidden_layer_sizes: list[int] = [],
+        dropout_rate: Union[float, None] = None,
+        apply_sigmoid: bool = True
     ):
         super(FNN, self).__init__()
         layer_sizes = [n_features] + hidden_layer_sizes + [output_dim]
@@ -20,7 +25,8 @@ class FNN(torch.nn.Module):
         # Remove last dropout & replace last ReLU with sigmoid
         if dropout_rate:
             layers = layers[:-1]
-        layers[-1] = torch.nn.Sigmoid()
+        if apply_sigmoid:
+            layers[-1] = torch.nn.Sigmoid()
 
         # Combine all layers into a sequential model
         self.net = torch.nn.Sequential(*layers)
