@@ -1,4 +1,4 @@
 type: fnn
 params:
-  hidden_layer_sizes: [256, 64]
+  hidden_layer_sizes: []
   apply_sigmoid: True
