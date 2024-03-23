@@ -60,7 +60,7 @@ def main(config: DictConfig):
     model_class = model_classes[config.model.type]
     model_config = config.model.params
 
-    run_name = f"{datetime.now():%m-%d %H:%M}_{dataset}_{embedding_type}_{config.model.type}"
+    run_name = f"{datetime.now():%m-%d %H:%M}_{dataset}_{embedding_type}_{config.model.type}_{score_type}"
     project_root = Path.cwd()
     artifact_dir = project_root / "models"
     model_dir = artifact_dir / f"{run_name}_epoch_{max_epochs}"
@@ -162,6 +162,7 @@ def main(config: DictConfig):
                 # TODO add option to toggle off
                 scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", factor=0.1, patience=10)
 
+                logger.info("Starting training")
                 fold_progress = pbar.add_task(f"Fold {fold}", total=max_epochs)
 
                 for epoch in range(max_epochs):
@@ -289,6 +290,7 @@ def main(config: DictConfig):
 
         # TODO add option to toggle off
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", factor=0.1, patience=10)
+        logger.info("Starting training")
         with progress.Progress(
             *progress.Progress.get_default_columns(), progress.TimeElapsedColumn()
         ) as pbar:
