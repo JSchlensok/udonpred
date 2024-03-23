@@ -1,6 +1,6 @@
 from functools import lru_cache
 from pathlib import Path
-from typing import Iterable, Union
+from typing import Iterable, Literal, Union
 
 import h5py
 import numpy as np
@@ -18,12 +18,14 @@ class TriZodDataset(Dataset):
         score_file: Union[Path, str],
         whitelist_ids: Iterable[str],
         cluster_df: pl.DataFrame,
-        device: str | torch.device
+        device: str | torch.device,
+        score_type: Literal["trizod", "chezod"] = "trizod"
     ) -> None:
+        score_column_name = "pscores" if score_type == "trizod" else "zscores"
         embeddings = {
         }
         scores = (
-            read_score_csv(score_file).group_by(pl.col("ID")).agg(pl.col("pscores"))
+            read_score_csv(score_file).group_by(pl.col("ID")).agg(pl.col(score_column_name))
         )
         cluster_df = cluster_df.filter(
             pl.col("cluster_representative_id").is_in(whitelist_ids)
@@ -57,6 +59,6 @@ class TriZodDataset(Dataset):
 
     def __getitem__(self, id: str):
         embedding = self.embeddings[id].clone()
-        trizod = self.scores[id].clone()
+        scores = self.scores[id].clone()
         mask = self.nan_masks[id].clone()
-        return embedding, trizod, mask
+        return embedding, scores, mask

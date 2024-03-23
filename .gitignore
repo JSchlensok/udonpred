@@ -13,4 +13,5 @@ __pycache__
 /outputs/
 /runs/
 /figures/
+out/
 prostt5_cache/

@@ -43,6 +43,7 @@ def main(config: DictConfig):
     embedding_dim = embedding_dimensions[embedding_type]
 
     dataset = config.dataset.name
+    score_type = config.score_type
     embedding_file = config.dataset.embedding_file
     cluster_assignments_file = config.dataset.cluster_file
     trizod_score_file = config.dataset.trizod_file
