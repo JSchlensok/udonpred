@@ -297,33 +297,33 @@ def main(config: DictConfig):
                 for metric_name in metric_names:
                     metrics[metric_name].reset()
 
-            for embs, trizod, mask in train_dl:
-                with torch.autocast(device_type=device, dtype=default_dtype):
-                    model.zero_grad()
-                    model.train()
-                    pred = model(embs).masked_select(mask)
-                    trizod = trizod.masked_select(mask)
-                    loss = criterion(pred, trizod)
+                for embs, trizod, mask in train_dl:
+                    with torch.autocast(device_type=device, dtype=default_dtype):
+                        model.zero_grad()
+                        model.train()
+                        pred = model(embs).masked_select(mask)
+                        trizod = trizod.masked_select(mask)
+                        loss = criterion(pred, trizod)
 
-                scaler.scale(loss).backward()
-                scaler.step(optimizer)
-                scaler.update()
-                optimizer.zero_grad(set_to_none=True)
+                    scaler.scale(loss).backward()
+                    scaler.step(optimizer)
+                    scaler.update()
+                    optimizer.zero_grad(set_to_none=True)
 
-                metrics["loss"].update(
-                    loss.detach(), embs.shape[0]
-                )
-                """
-                metrics["spearman"].update(
-                    spearman(pred, trizod), embs.shape[0]
-                )
-                """
+                    metrics["loss"].update(
+                        loss.detach(), embs.shape[0]
+                    )
+                    """
+                    metrics["spearman"].update(
+                        spearman(pred, trizod), embs.shape[0]
+                    )
+                    """
 
-            train_loss = metrics["loss"].compute().item()
-            writer.add_scalar("loss/train", train_loss, epoch+1)
-            #writer.add_scalar("spearman/train", metrics["spearman"].compute().item(), epoch+1)
-            scheduler.step(train_loss)
-            pbar.advance(overall_progress)
+                train_loss = metrics["loss"].compute().item()
+                writer.add_scalar("loss/train", train_loss, epoch+1)
+                #writer.add_scalar("spearman/train", metrics["spearman"].compute().item(), epoch+1)
+                scheduler.step(train_loss)
+                pbar.advance(overall_progress)
 
         model_path = model_dir / f"final.pt"
         logging.info(f"Saving model to {model_path}")
