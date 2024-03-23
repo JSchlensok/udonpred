@@ -11,6 +11,10 @@ hydra:
 
 embedding_type: prostt5
 
+data:
+  embedding_type: prott5
+  subset: strict
+
 training:
   learning_rate: 1e-3
   n_splits: 5

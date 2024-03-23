@@ -16,7 +16,6 @@ from Bio import SeqIO
 from maskedtensor import masked_tensor
 from omegaconf import DictConfig, OmegaConf
 from rich import progress
-from sklearn.model_selection import KFold
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import TqdmExperimentalWarning
 from tqdm.rich import tqdm
@@ -26,10 +25,7 @@ from src.dataset.dataset import TriZodDataset
 from src.dataset.utils import ClusterSampler, pad_collate
 from src.models import FNN, SETHClone
 from src.utils.logging import setup_logger
-
-embedding_dimensions = {"prott5": 1024, "esm2_3b": 2560, "prostt5": 1024}
-
-model_classes = {"fnn": FNN, "cnn": SETHClone}
+from src.utils import embedding_dimensions, model_classes
 
 
 @hydra.main(version_base=None, config_path="../../parameters", config_name="fnn")

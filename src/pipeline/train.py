@@ -1,7 +1,11 @@
 import gc
 import logging
 import json
+import gc
+import logging
+import json
 import warnings
+from datetime import datetime
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Literal
@@ -14,8 +18,10 @@ import torchmetrics as tm
 from Bio import SeqIO
 from maskedtensor import masked_tensor
 from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig, OmegaConf
 from rich import progress
 from sklearn.model_selection import KFold
+from torch.utils.tensorboard import SummaryWriter
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import TqdmExperimentalWarning
 from tqdm.rich import tqdm
@@ -25,11 +31,7 @@ from src.dataset.dataset import TriZodDataset
 from src.dataset.utils import ClusterSampler, pad_collate
 from src.models import FNN, SETHClone
 from src.utils.logging import setup_logger
-
-embedding_dimensions = {"prott5": 1024, "esm2_3b": 2560, "prostt5": 1024}
-
-model_classes = {"fnn": FNN, "cnn": SETHClone}
-
+from src.utils import embedding_dimensions, model_classes
 
 @hydra.main(version_base=None, config_path="../../config", config_name="config")
 def main(config: DictConfig):
@@ -60,6 +62,9 @@ def main(config: DictConfig):
     artifact_dir = project_root / "models"
     model_dir = artifact_dir / f"{run_name}_epoch_{max_epochs}"
     model_dir.mkdir(exist_ok=True, parents=True)
+    artifact_dir = project_root / "models"
+    model_dir = artifact_dir / f"{run_name}_epoch_{max_epochs}"
+    model_dir.mkdir(exist_ok=True, parents=True)
 
     logger.info("Setting up Torch")
     if torch.cuda.is_available():
@@ -72,7 +77,7 @@ def main(config: DictConfig):
         use_amp = False
 
     logger.info(
-        f"Using device {device} and automatic mixed precision with default dtype {default_dtype}"
+        f"Using device {device} and automatic mixed precision withh default dtype {default_dtype}"
     )
 
     torch.set_default_device(device)
@@ -154,11 +159,23 @@ def main(config: DictConfig):
             scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", factor=0.1, patience=10)
 
             fold_progress = pbar.add_task(f"Fold {fold}", total=max_epochs)
+
             for epoch in range(max_epochs):
                 for split_name in split_names:
                   for metric_name in metric_names:
                       metrics[split_name][metric_name].reset()
 
+                train_progress = pbar.add_task(
+                    f"Epoch {epoch+1} training  ", total=len(train_dl)
+                )
+                # TODO track loss per batch
+                for embs, trizod, mask in train_dl:
+                    with torch.autocast(device_type=device, dtype=default_dtype):
+                        model.zero_grad()
+                        model.train()
+                        pred = model(embs).masked_select(mask)
+                        trizod = trizod.masked_select(mask)
+                        loss = criterion(pred, trizod)
                 train_progress = pbar.add_task(
                     f"Epoch {epoch+1} training  ", total=len(train_dl)
                 )
@@ -176,6 +193,10 @@ def main(config: DictConfig):
                     scaler.update()
                     optimizer.zero_grad(set_to_none=True)
 
+                    metrics["train"]["loss"].update(
+                        loss.detach(), embs.shape[0]
+                    )
+                    pbar.advance(train_progress)
                     metrics["train"]["loss"].update(
                         loss.detach(), embs.shape[0]
                     )
@@ -199,7 +220,7 @@ def main(config: DictConfig):
                                 criterion(pred, trizod).detach(), embs.shape[0]
                             )
 
-                        pbar.advance(val_progress)
+                            pbar.advance(val_progress)
                     pbar.remove_task(val_progress)
 
                 for split_name in split_names:
@@ -217,12 +238,12 @@ def main(config: DictConfig):
             with open(model_dir / "config.yml", "w+") as f:
                 OmegaConf.save(config=config, f=f)
 
-            del train_dl
             del train_ds
-            del val_dl
+            del train_dl
             del val_ds
-            torch.cuda.empty_cache()
+            del val_dl
             gc.collect()
+            torch.cuda.empty_cache()
             pbar.advance(overall_progress)
 
     logger.info("Finished training, tidying up...")

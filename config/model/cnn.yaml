@@ -1,0 +1,3 @@
+type: cnn
+params:
+  hidden_layer: 32

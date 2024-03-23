@@ -1,5 +1,5 @@
 from .fnn import FNN
-from .seth import SETHClone
+from .cnn import CNN
 
-__all__ = ["FNN", "SETHClone"]
+__all__ = ["FNN", "CNN"]
 

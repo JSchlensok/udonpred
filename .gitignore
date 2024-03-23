@@ -4,8 +4,13 @@
 # Standard Python stuff
 __pycache__
 
+/src/**/*.ipynb
+
 # ML stuff
 /data/
 /models/
 /multirun/
+/outputs/
 /runs/
+/figures/
+prostt5_cache/

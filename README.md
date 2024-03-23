@@ -1,8 +1,20 @@
+## Inference
+A Dockerfile is provided to run inference easily. Build it using `docker build -t <image_name> .`, and once built, generate predictions as follows:
+```bash
+docker run -it -v <data_directory>:/app/data -v <output_directory>:/app/out <image_name> -i <path_to_input_fasta_file> [-e <path_to_embedding_h5_file>] [--write-to-one-file] [--model-type {cnn|fnn}] [--model-directory <model_directory>]
+```
+The `<data_directory>` needs to contain the input FASTA file and corresponding embeddings in H5 format (if existent). The `<output_directory>` is used to persist predictions and timing files.
+The input file paths need to be relative to the `/app` directory in the container, i.e. include the directory mounted to `/app/data`, e.g. `/data/file.fasta`.
+Predictions are stored in one file per protein unless the `--write-to-one-file` switch is toggled, in which case they're written to `<output_directory>/all.caid`.
+
+Output is formatted according to the [CAID 3 specifications](https://caid.idpcentral.org/challenge#participate).
+
+## Training
 ### Hydra & setup
 `parameters/linreg.yaml` contains some default parameters (that are just a proof-of-concept). Running `train.py` without any additional parameters will perform training with those.
 They can be overridden using [Hydra](https://hydra.cc/):
 - simple: `python -m src.pipeline.train training.max_epochs=25`
-- queueing multiple runs: `python -m src.pipeline.train --multirun data.embedding_type=esm2_3b,prott5 data.subset=strict,moderate,tolerate,unfiltered training.max_epochs
+- queueing multiple runs: `python -m src.pipeline.train --multirun data.embedding_type=esm2_3b,prott5 data.subset=strict,moderate,tolerant,unfiltered training.max_epochs
 =25`
 
 The training scripts automatically log loss (not hyperparameters because that just isn't working as expected using the API) using the PyTorch TensorBoard extension. Use it like `tensorboard --logdir <project_path>/runs`.
