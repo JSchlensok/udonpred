@@ -11,11 +11,12 @@ Output is formatted according to the [CAID 3 specifications](https://caid.idpcen
 
 ## Training
 ### Hydra & setup
-`parameters/linreg.yaml` contains some default parameters (that are just a proof-of-concept). Running `train.py` without any additional parameters will perform training with those.
+`config/config.yaml` contains default training parameters. Running `train.py` without any additional parameters will perform training with those.
 They can be overridden using [Hydra](https://hydra.cc/):
-- simple: `python -m src.pipeline.train training.max_epochs=25`
-- queueing multiple runs: `python -m src.pipeline.train --multirun data.embedding_type=esm2_3b,prott5 data.subset=strict,moderate,tolerant,unfiltered training.max_epochs
-=25`
+- simple: `python -m src.pipeline.train training.max_epochs=250`
+- queueing multiple runs: `python -m src.pipeline.train --multirun embedding_type=esm2_3b,prott5 dataset=strict,moderate,tolerant,unfiltered training.max_epochs=250`
+
+A few default parameter sets for models and datasets are provided in the `config/models` and `config/datasets` folders which can be extended upon or overriden ad libitum using the command line. Additional parameters can be added with a prefixed `+`.
 
 The training scripts automatically log loss (not hyperparameters because that just isn't working as expected using the API) using the PyTorch TensorBoard extension. Use it like `tensorboard --logdir <project_path>/runs`.
 
