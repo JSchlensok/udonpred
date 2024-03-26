@@ -17,7 +17,7 @@ from Bio import SeqIO
 from transformers import T5Tokenizer, T5EncoderModel
 
 from src.models import FNN, CNN
-from src.utils import embedding_dimensions, model_classes
+from src.utils import embedding_dimensions, model_classes, setup_logger
 
 def generate_caid_format(protein_id: str, scores: torch.tensor, sequence: str) -> None:
     lines = []
@@ -40,6 +40,8 @@ def main(
 ):
     script_start_time = dt.now()
 
+    logger = setup_logger()
+
     model_dir = model_dir or Path.cwd() / "model"
     output_dir = output_dir or Path.cwd() / "out"
 
@@ -61,6 +63,7 @@ def main(
     weight_file = next(iter(model_dir.glob("*.pt")))
     model.load_state_dict(torch.load(weight_file, map_location=map_location))
     model = model.double()
+    model = model.to(device)
 
     # Prepare file output
     disorder_output_path = output_dir / "disorder"
@@ -76,7 +79,7 @@ def main(
             embedding_progress = pbar.add_task("Computing embeddings", total=len(sequences))
             pretrained_path = prostt5_cache_directory or "Rostlab/ProstT5"
             tokenizer = T5Tokenizer.from_pretrained(pretrained_path, do_lower_case=False)
-            encoder = T5EncoderModel.from_pretrained(pretrained_path)
+            encoder = T5EncoderModel.from_pretrained(pretrained_path).to(device)
             encoder.half() if torch.cuda.is_available() else encoder.double()
 
             embeddings = {}
@@ -86,10 +89,15 @@ def main(
                     ids = tokenizer.batch_encode_plus([seq], add_special_tokens=True, padding="longest", return_tensors='pt').to(device)
                     embeddings[id] = encoder(ids.input_ids, attention_mask=ids.attention_mask).last_hidden_state[0, 1:len(sequence)+1]
                     pbar.advance(embedding_progress)
+                h5_output_file = fasta_file.stem + "_prostt5.h5"
+                logger.info(f"Saving generated predictions to {h5_output_file} for reuse")
+                with h5py.File(h5_output_file, 'w') as f:
+                    for id, emb in embeddings.items():
+                        f.create_dataset(id, data=emb.cpu().numpy())
 
         else:
             if prostt5_cache_directory:
-                logging.warning("Both a cache directory for encoder weights and a file with pre-computed embeddings were provided, so the encoder weights are ignored and the pre-computed embeddings used")
+                logger.warning("Both a cache directory for encoder weights and a file with pre-computed embeddings were provided, so the encoder weights are ignored and the pre-computed embeddings used")
 
             embeddings = {id: torch.tensor(np.array(emb[()]), device=device) for id, emb in h5py.File(embedding_file).items() if id in sequences.keys()}
 
