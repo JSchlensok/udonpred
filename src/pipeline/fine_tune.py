@@ -152,7 +152,7 @@ def main(config: DictConfig):
     logging.info(f"Saving model to {model_path}")
     torch.save(model.state_dict(), model_path)
 
-    config_path = model_path.parent / (model_path.stem + "_finetuned.yml")
+    config_path = model_path.parent / (model_path.stem + ".yml")
     with open(config_path, "w+") as f:
         OmegaConf.save(config=config, f=f)
 
