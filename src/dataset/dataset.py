@@ -8,6 +8,7 @@ import polars as pl
 import torch
 from torch.utils.data import Dataset
 
+from src.dataset.disprot_scores.parse import read_score_fasta
 from src.dataset.trizod_scores.parse import read_score_csv
 
 
@@ -58,6 +59,35 @@ class TriZodDataset(Dataset):
         return len(self.cluster_representative_ids)
 
     def __getitem__(self, id: str):
+        embedding = self.embeddings[id].clone()
+        scores = self.scores[id].clone()
+        mask = self.nan_masks[id].clone()
+        return embedding, scores, mask
+
+
+class DisprotDataset(Dataset):
+    def __init__(
+        self,
+        embedding_file: Union[Path, str],
+        score_file: Path,
+        device: str | torch.device,
+    ) -> None:
+        annotated_sequences = read_score_fasta(score_file)
+        self.scores = {id: torch.tensor(x.annotations) for id, x in annotated_sequences.items()}
+        self.all_ids = list(annotated_sequences.keys())
+        self.embeddings = {
+            id: torch.tensor(np.array(emb[()]), device=device) for id, emb in h5py.File(embedding_file).items()
+            if id in self.all_ids
+        }
+        self.nan_masks = {id: ~score.isnan() for id, score in self.scores.items()}
+        self.indices = {i: id for i, id in enumerate(self.all_ids)}
+
+    def __len__(self):
+        return len(self.scores)
+
+    def __getitem__(self, id: str | int):
+        if isinstance(id, int):
+            id = self.indices[id]
         embedding = self.embeddings[id].clone()
         scores = self.scores[id].clone()
         mask = self.nan_masks[id].clone()

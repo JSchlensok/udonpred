@@ -1,0 +1,3 @@
+name: until_2023_12
+embedding_file: data/disprot_annotations/prostt5_embeddings.h5
+data_directory: data/disprot_annotations/references_until_2023_12

@@ -1,0 +1,17 @@
+defaults:
+  - dataset: references_until_2023_12
+  - override hydra/job_logging: none
+  - override hydra/hydra_logging: none
+
+hydra:
+  output_subdir: null
+  run:
+    dir: .
+
+embedding_type: prostt5
+score_type: disorder
+
+training:
+  learning_rate: 1e-3
+  max_epochs: 100
+  batch_size: 256

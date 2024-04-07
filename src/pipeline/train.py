@@ -33,7 +33,7 @@ from src.models import FNN, CNN
 from src.utils.logging import setup_logger
 from src.utils import embedding_dimensions, model_classes
 
-@hydra.main(version_base=None, config_path="../../config", config_name="config")
+@hydra.main(version_base=None, config_path="../../config", config_name="train")
 def main(config: DictConfig):
     logger = setup_logger()
     warnings.filterwarnings("ignore", category=TqdmExperimentalWarning)
