@@ -32,9 +32,14 @@ def main(config: DictConfig):
     embedding_dim = embedding_dimensions[embedding_type]
 
     dataset = config.dataset.name
-    score_type = config.score_type
     embedding_file = config.dataset.embedding_file
-    disprot_score_file = Path(config.dataset.data_directory) / f"{score_type}.fasta"
+
+    score_type = config.score_type
+    if isinstance(score_type, list):
+        disprot_score_files = [Path(config.dataset.data_directory) / f"{type}.fasta" for score_type in core_type]
+    else:
+        disprot_score_files = Path(config.dataset.data_directory) / f"{score_type}.fasta"
+
 
     train_batch_size = config.training.batch_size
     learning_rate = config.training.learning_rate
@@ -66,11 +71,15 @@ def main(config: DictConfig):
     torch.set_default_device(device)
 
     logger.info("Loading training data")
-    train_ds = DisprotDataset(
-        embedding_file,
-        disprot_score_file,
-        device
-    )
+    train_ds = torch.utils.data.ConcatDataset([
+        DisprotDataset(
+            embedding_file,
+            score_file,
+            device
+        )
+        for score_file in disprot_score_files
+    ])
+
     train_dl = torch.utils.data.DataLoader(
         train_ds,
         batch_size=train_batch_size,
