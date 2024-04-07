@@ -1,11 +1,7 @@
 import gc
 import logging
 import json
-import gc
-import logging
-import json
 import warnings
-from datetime import datetime
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Literal
@@ -16,12 +12,9 @@ import polars as pl
 import torch
 import torchmetrics as tm
 from Bio import SeqIO
-from maskedtensor import masked_tensor
-from omegaconf import DictConfig, OmegaConf
 from omegaconf import DictConfig, OmegaConf
 from rich import progress
 from sklearn.model_selection import KFold
-from torch.utils.tensorboard import SummaryWriter
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import TqdmExperimentalWarning
 from tqdm.rich import tqdm
@@ -35,9 +28,11 @@ from src.utils import embedding_dimensions, model_classes
 
 @hydra.main(version_base=None, config_path="../../config", config_name="train")
 def main(config: DictConfig):
+    # Set up logging
     logger = setup_logger()
     warnings.filterwarnings("ignore", category=TqdmExperimentalWarning)
 
+    # Parse config
     logger.info("Parsing parameters")
     embedding_type = config.embedding_type
     embedding_dim = embedding_dimensions[embedding_type]
@@ -60,15 +55,14 @@ def main(config: DictConfig):
     model_class = model_classes[config.model.type]
     model_config = config.model.params
 
+    # Set up artifacts & directories
     run_name = f"{datetime.now():%m-%d_%H:%M}_{dataset}_{embedding_type}_{config.model.type}_{score_type}"
     project_root = Path.cwd()
     artifact_dir = project_root / "models"
     model_dir = artifact_dir / f"{run_name}_epoch_{max_epochs}"
     model_dir.mkdir(exist_ok=True, parents=True)
-    artifact_dir = project_root / "models"
-    model_dir = artifact_dir / f"{run_name}_epoch_{max_epochs}"
-    model_dir.mkdir(exist_ok=True, parents=True)
 
+    # PyTorch boilerplate
     logger.info("Setting up Torch")
     if torch.cuda.is_available():
         device = "cuda"
@@ -86,7 +80,6 @@ def main(config: DictConfig):
     torch.set_default_device(device)
     scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
 
-    # TODO add option for training only one model
     logger.info("Initializing dataset")
     all_cluster_assignments = read_cluster_assignments(
       cluster_assignments_file
@@ -95,6 +88,7 @@ def main(config: DictConfig):
         all_cluster_assignments.select("sequence_id").to_series(), dtype=str
     )
 
+    # TODO refactor to get rid of code duplication
     if not final_model:
         kfold = KFold(n_splits=n_splits, shuffle=False)
         splits = list(kfold.split(sequence_ids))

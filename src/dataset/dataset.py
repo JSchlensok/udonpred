@@ -18,13 +18,11 @@ class TriZodDataset(Dataset):
         embedding_file: Union[Path, str],
         score_file: Union[Path, str],
         whitelist_ids: Iterable[str],
-        cluster_df: pl.DataFrame,
-        device: str | torch.device,
+        cluster_df: pl.DataFrame = None,
+        device: str | torch.device = "cpu",
         score_type: Literal["trizod", "chezod"] = "trizod"
     ) -> None:
         score_column_name = "pscores" if score_type == "trizod" else "zscores"
-        embeddings = {
-        }
         scores = (
             read_score_csv(score_file).group_by(pl.col("ID")).agg(pl.col(score_column_name))
         )
