@@ -7,7 +7,7 @@ from tqdm import tqdm
 AnnotatedSequence = namedtuple("AnnotatedSequence", ["sequence", "annotations"])
 annotation_map = {'0': 0, '1': 1, '-': None}
 
-def read_score_fasta(fasta_file: Path, show_progress: bool = False) -> dict[str, ]:
+def read_score_fasta(fasta_file: Path, show_progress: bool = False) -> dict[str, AnnotatedSequence]:
     annotations = {}
     lines = [line.strip() for line in fasta_file.open().readlines()]
     indices = range(0, len(lines), 3)

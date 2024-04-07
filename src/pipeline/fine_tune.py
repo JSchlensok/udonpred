@@ -1,6 +1,7 @@
 import gc
 import logging
 import warnings
+import yaml
 from datetime import datetime
 from pathlib import Path
 
@@ -113,11 +114,11 @@ def main(config: DictConfig):
             for metric_name in metric_names:
                 metrics[metric_name].reset()
 
-            for embs, trizod, mask in train_dl:
+            for embs, scores, mask in train_dl:
                 with torch.autocast(device_type=device, dtype=default_dtype):
                     model.zero_grad()
                     pred = model(embs).masked_select(mask)
-                    scores = scores.masked_select(mask)
+                    scores = scores.masked_select(mask).to(dtype=torch.float32)
                     loss = criterion(pred, scores)
 
                 scaler.scale(loss).backward()

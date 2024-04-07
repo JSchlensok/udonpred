@@ -71,10 +71,10 @@ class DisprotDataset(Dataset):
         device: str | torch.device,
     ) -> None:
         annotated_sequences = read_score_fasta(score_file)
-        self.scores = {id: torch.tensor(x.annotations) for id, x in annotated_sequences.items()}
+        self.scores = {id: torch.tensor(x.annotations, dtype=torch.float32) for id, x in annotated_sequences.items()}
         self.all_ids = list(annotated_sequences.keys())
         self.embeddings = {
-            id: torch.tensor(np.array(emb[()]), device=device) for id, emb in h5py.File(embedding_file).items()
+            id: torch.tensor(np.array(emb[()]), device=device, dtype=torch.float32) for id, emb in h5py.File(embedding_file).items()
             if id in self.all_ids
         }
         self.nan_masks = {id: ~score.isnan() for id, score in self.scores.items()}
