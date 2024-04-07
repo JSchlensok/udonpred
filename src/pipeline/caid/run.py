@@ -33,8 +33,8 @@ def main(
     fasta_file: Annotated[Path, typer.Option("--input-fasta", "-i")],
     embedding_file: Annotated[Path, typer.Option("--embedding-file", "-e")] = None,
     prostt5_cache_directory: Annotated[Path, typer.Option("--prostt5-cache")] = None,
-    model_type: Annotated[str, typer.Option("--model-type")] = "fnn",
     model_dir: Annotated[Path, typer.Option("--model-directory")] = None,
+    checkpoint_name: Annotated[Path, typer.Option("--checkpoint-name")] = "final",
     output_dir: Annotated[Path, typer.Option("--output-directory", "-o")] = None,
     write_to_one_file: Annotated[bool, typer.Option("--write-to-one-file")] = False
 ):
@@ -59,8 +59,8 @@ def main(
         map_location = torch.device("cpu")
         torch.set_default_tensor_type(torch.DoubleTensor)
 
-    model = model_classes[model_type](n_features=embedding_dim, **model_config["model"]["params"])
-    weight_file = next(iter(model_dir.glob("*.pt")))
+    model = model_classes[model_config["model"]["type"]](n_features=embedding_dim, **model_config["model"]["params"])
+    weight_file = model_dir / f"{checkpoint_name}.pt"
     model.load_state_dict(torch.load(weight_file, map_location=map_location))
     model = model.double()
     model = model.to(device)
