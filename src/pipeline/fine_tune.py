@@ -9,7 +9,7 @@ import hydra
 import numpy as np
 import torch
 import torchmetrics as tm
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig, ListConfig, OmegaConf
 from rich import progress
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import TqdmExperimentalWarning
@@ -35,18 +35,24 @@ def main(config: DictConfig):
     embedding_file = config.dataset.embedding_file
 
     score_type = config.score_type
-    if isinstance(score_type, list):
-        disprot_score_files = [Path(config.dataset.data_directory) / f"{type}.fasta" for score_type in core_type]
+    if isinstance(score_type, ListConfig):
+        disprot_score_files = [Path(config.dataset.data_directory) / f"{type}.fasta" for type in score_type]
+        multiple_score_types = True
     else:
-        disprot_score_files = Path(config.dataset.data_directory) / f"{score_type}.fasta"
-
+        disprot_score_files = [Path(config.dataset.data_directory) / f"{score_type}.fasta"]
+        multiple_score_types = False
 
     train_batch_size = config.training.batch_size
     learning_rate = config.training.learning_rate
     max_epochs = config.training.max_epochs
+    limited_gpu_memory_mode = "limited_gpu_memory" in config.training
 
     # Set up artifacts & directories
-    run_name = f"{datetime.now():%m-%d_%H:%M}_{dataset}_{score_type}_{embedding_type}_finetune"
+    if multiple_score_types:
+      run_name = f"{datetime.now():%m-%d_%H:%M}_{dataset}_multiple_{embedding_type}_finetune"
+    else:
+      run_name = f"{datetime.now():%m-%d_%H:%M}_{dataset}_{score_type}_{embedding_type}_finetune"
+
     project_root = Path.cwd()
     artifact_dir = project_root / "models"
     model_dir = artifact_dir / config.run_name
@@ -75,7 +81,7 @@ def main(config: DictConfig):
         DisprotDataset(
             embedding_file,
             score_file,
-            device
+            device=torch.device("cpu") if limited_gpu_memory_mode else device
         )
         for score_file in disprot_score_files
     ])
@@ -108,7 +114,8 @@ def main(config: DictConfig):
     scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
     model.train()
 
-    criterion = torch.nn.MSELoss()
+    #criterion = torch.nn.MSELoss()
+    criterion = torch.nn.BCELoss()
     auc = tm.classification.BinaryAUROC()
     metric_names = ["loss", "auc"]
     metrics = {metric_name: tm.aggregation.MeanMetric() for metric_name in metric_names}
@@ -126,6 +133,11 @@ def main(config: DictConfig):
             for embs, scores, mask in train_dl:
                 with torch.autocast(device_type=device, dtype=default_dtype):
                     model.zero_grad()
+                    # TODO check if this is necessary with autocast
+                    if limited_gpu_memory_mode:
+                      embs = embs.to(device)
+                      mask = mask.to(device)
+                      scores = scores.to(device)
                     pred = model(embs).masked_select(mask)
                     scores = scores.masked_select(mask).to(dtype=torch.float32)
                     loss = criterion(pred, scores)
@@ -148,11 +160,14 @@ def main(config: DictConfig):
             scheduler.step(train_loss)
             pbar.advance(overall_progress)
 
-    model_path = model_dir / f"finetuned_{dataset}_{score_type}.pt"
+    if multiple_score_types:
+      model_path = model_dir / f"finetuned_{dataset}_multiple.pt"
+    else:
+      model_path = model_dir / f"finetuned_{dataset}_{score_type}.pt"
     logging.info(f"Saving model to {model_path}")
     torch.save(model.state_dict(), model_path)
 
-    config_path = model_path.parent / (model_path.stem + "_finetuned.yml")
+    config_path = model_path.parent / (model_path.stem + ".yml")
     with open(config_path, "w+") as f:
         OmegaConf.save(config=config, f=f)
 
