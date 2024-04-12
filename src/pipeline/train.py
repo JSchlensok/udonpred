@@ -175,27 +175,11 @@ def main(config: DictConfig):
                             pred = model(embs).masked_select(mask)
                             trizod = trizod.masked_select(mask)
                             loss = criterion(pred, trizod)
-                    train_progress = pbar.add_task(
-                        f"Epoch {epoch+1} training  ", total=len(train_dl)
-                    )
-                    # TODO track loss per batch
-                    for embs, trizod, mask in train_dl:
-                        with torch.autocast(device_type=device, dtype=default_dtype):
-                            model.zero_grad()
-                            model.train()
-                            pred = model(embs).masked_select(mask)
-                            trizod = trizod.masked_select(mask)
-                            loss = criterion(pred, trizod)
-
                         scaler.scale(loss).backward()
                         scaler.step(optimizer)
                         scaler.update()
                         optimizer.zero_grad(set_to_none=True)
 
-                        metrics["train"]["loss"].update(
-                            loss.detach(), embs.shape[0]
-                        )
-                        pbar.advance(train_progress)
                         metrics["train"]["loss"].update(
                             loss.detach(), embs.shape[0]
                         )
