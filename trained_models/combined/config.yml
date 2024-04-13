@@ -1,0 +1,29 @@
+dataset:
+  name: until_2022_06
+  embedding_file: data/disprot_annotations/prostt5_embeddings.h5
+  data_directory: data/disprot_annotations/references_until_2022_06
+model:
+  type: fnn
+  params:
+    hidden_layer_sizes:
+    - 256
+    - 64
+    apply_sigmoid: true
+    dropout_rate: 0.4
+embedding_type: prostt5
+score_type:
+- disorder
+- disorder_pdb
+- disorder_pdb_fill
+- disorder_nox
+- binding
+- binding_disorder
+- binding_nucleic_acid
+- linker
+- linker_disorder
+training:
+  learning_rate: 0.001
+  max_epochs: 100
+  batch_size: 256
+run_name: 03-28_23:23_tolerant_prostt5_fnn_trizod_epoch_250
+freeze_layers: 2

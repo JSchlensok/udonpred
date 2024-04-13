@@ -1,11 +1,17 @@
 ## Inference
 A Dockerfile is provided to run inference easily. Build it using `docker build -t <image_name> .`, and once built, generate predictions as follows:
 ```bash
-docker run -it -v <data_directory>:/app/data -v <output_directory>:/app/out <image_name> -i <path_to_input_fasta_file> [-e <path_to_embedding_h5_file>] [--write-to-one-file] [--model-type {cnn|fnn}] [--model-directory <model_directory>]
+docker run -it -v <data_directory>:/app/data -v <output_directory>:/app/out <image_name> -i <path_to_input_fasta_file> [-e <path_to_embedding_h5_file>] [--write-to-one-file]  [--model-directory <model_directory>]
 ```
-The `<data_directory>` needs to contain the input FASTA file and corresponding embeddings in H5 format (if existent). The `<output_directory>` is used to persist predictions and timing files.
+The `<data_directory>` needs to contain the input FASTA file and corresponding embeddings in H5 format (if existent). If no HD5 file with ProstT5 per-residue embeddings is provided via the `-e` option, one will be generated (WARNING: THIS IS EXTREMELY SLOW ON CPU!)
+The `<output_directory>` is used to persist predictions and timing files.
 The input file paths need to be relative to the `/app` directory in the container, i.e. include the directory mounted to `/app/data`, e.g. `/data/file.fasta`.
 Predictions are stored in one file per protein unless the `--write-to-one-file` switch is toggled, in which case they're written to `<output_directory>/all.caid`.
+
+UdonPred comes in three flavours:
+- `UdonPred-TriZOD` that's trained on TriZOD scores. This is the default flavour.
+- `UdonPred-DisProt` that's trained on DisProt annotations. Run this flavor by passing `--model-directory trained_models/disprot`.
+- `UdonPred-combined` that's trained on TriZOD scores and fine-tuned on DisProt annotations. Run this flavor by passing `--model-directory trained_models/combined`.
 
 Output is formatted according to the [CAID 3 specifications](https://caid.idpcentral.org/challenge#participate).
 

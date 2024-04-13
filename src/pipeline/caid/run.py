@@ -42,7 +42,7 @@ def main(
 
     logger = setup_logger()
 
-    model_dir = model_dir or Path.cwd() / "model"
+    model_dir = model_dir or Path.cwd() / "trained_models/trizod"
     output_dir = output_dir or Path.cwd() / "out"
 
     device = "cpu"
@@ -99,7 +99,9 @@ def main(
             if prostt5_cache_directory:
                 logger.warning("Both a cache directory for encoder weights and a file with pre-computed embeddings were provided, so the encoder weights are ignored and the pre-computed embeddings used")
 
-            embeddings = {id: torch.tensor(np.array(emb[()]), device=device) for id, emb in h5py.File(embedding_file).items() if id in sequences.keys()}
+            embeddings = {id: torch.from_numpy(np.array(emb[()])).to(device) for id, emb in h5py.File(embedding_file).items() if id in sequences.keys()}
+            if len(embeddings) < len(sequences):
+                logger.error(f"Provided embedding file does not contain embeddings for {len(sequences) - len(embeddings)} sequences from the FASTA file!")
 
         overall_progress = pbar.add_task("Generating predictions", total=len(embeddings))
 
