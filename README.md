@@ -5,7 +5,8 @@ docker run -it -v <data_directory>:/app/data -v <output_directory>:/app/out <ima
 ```
 The `<data_directory>` needs to contain the input FASTA file and corresponding embeddings in H5 format (if existent). If no HD5 file with ProstT5 per-residue embeddings is provided via the `-e` option, one will be generated (WARNING: THIS IS EXTREMELY SLOW ON CPU!)
 The `<output_directory>` is used to persist predictions and timing files.
-The input file paths need to be relative to the `/app` directory in the container, i.e. include the directory mounted to `/app/data`, e.g. `/data/file.fasta`.
+Importantly, `<data_directory>` and `<output_directory>` need to be specified with leading dots if they're relative paths, e.g. `./data:/app/data` instead of `data:/app/data`.
+The input file paths need to be relative to the `/app` directory in the container, i.e. include the directory mounted to `/app/data`, e.g. `data/file.fasta`.
 Predictions are stored in one file per protein unless the `--write-to-one-file` switch is toggled, in which case they're written to `<output_directory>/all.caid`.
 
 UdonPred comes in three flavours:

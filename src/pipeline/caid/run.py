@@ -17,7 +17,7 @@ from Bio import SeqIO
 from transformers import T5Tokenizer, T5EncoderModel
 
 from src.models import FNN, CNN
-from src.utils import embedding_dimensions, model_classes, setup_logger
+from src.utils import embedding_dimensions, load_model, model_classes, setup_logger
 
 def generate_caid_format(protein_id: str, scores: torch.tensor, sequence: str) -> None:
     lines = []
@@ -49,8 +49,6 @@ def main(
     embedding_type = "prostt5"
     embedding_dim = embedding_dimensions[embedding_type]
 
-    model_config = yaml.safe_load((model_dir / "config.yml").open())
-    
     if torch.cuda.is_available():
         device = torch.device("cuda:0")
         map_location = None
@@ -59,11 +57,7 @@ def main(
         map_location = torch.device("cpu")
         torch.set_default_tensor_type(torch.DoubleTensor)
 
-    model = model_classes[model_config["model"]["type"]](n_features=embedding_dim, **model_config["model"]["params"])
-    weight_file = model_dir / f"{checkpoint_name}.pt"
-    model.load_state_dict(torch.load(weight_file, map_location=map_location))
-    model = model.double()
-    model = model.to(device)
+    model = load_model(model_dir / "config.yml", model_dir / f"{checkpoint_name}.pt").to(device)
 
     # Prepare file output
     disorder_output_path = output_dir / "disorder"
