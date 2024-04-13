@@ -47,6 +47,7 @@ def main(config: DictConfig):
     learning_rate = config.training.learning_rate
     n_splits = config.training.n_splits
     max_epochs = config.training.max_epochs
+    early_stopping_patience = config.training.early_stopping_patience
 
     final_model = (n_splits == 1)
 
@@ -268,14 +269,16 @@ def main(config: DictConfig):
 
         # TODO add option to toggle off
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", factor=0.1, patience=10)
+        best_loss = torch.inf
         logger.info("Starting training")
         with progress.Progress(
             *progress.Progress.get_default_columns(), progress.TimeElapsedColumn()
         ) as pbar:
-            overall_progress = pbar.add_task("Overall", total=len(train_dl))
+            overall_progress = pbar.add_task("Overall", total=max_epochs)
             for epoch in range(max_epochs):
                 for metric_name in metric_names:
                     metrics[metric_name].reset()
+                epoch_progress = pbar.add_task(f"Epoch {epoch}", total=len(train_dl))
 
                 for embs, trizod, mask in train_dl:
                     with torch.autocast(device_type=device, dtype=default_dtype):
@@ -293,16 +296,20 @@ def main(config: DictConfig):
                     metrics["loss"].update(
                         loss.detach(), embs.shape[0]
                     )
-                    """
-                    metrics["spearman"].update(
-                        spearman(pred, trizod), embs.shape[0]
-                    )
-                    """
+                    pbar.advance(epoch_progress)
 
                 train_loss = metrics["loss"].compute().item()
                 writer.add_scalar("loss/train", train_loss, epoch+1)
-                #writer.add_scalar("spearman/train", metrics["spearman"].compute().item(), epoch+1)
                 scheduler.step(train_loss)
+                pbar.remove_task(epoch_progress)
+                if train_loss < best_loss:
+                    best_loss = train_loss
+                    epochs_without_improvement = 0
+                else:
+                    epochs_without_improvement += 1
+                    if epochs_without_improvement == early_stopping_patience:
+                        logging.info("Patience reached, training stopped")
+                        break
                 pbar.advance(overall_progress)
 
         model_path = model_dir / f"final.pt"
@@ -311,11 +318,6 @@ def main(config: DictConfig):
 
         with open(model_dir / "config.yml", "w+") as f:
             OmegaConf.save(config=config, f=f)
-
-        del train_dl
-        del train_ds
-        torch.cuda.empty_cache()
-        gc.collect()
 
 
 if __name__ == "__main__":

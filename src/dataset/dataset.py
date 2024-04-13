@@ -44,19 +44,22 @@ class TriZodDataset(Dataset):
             self.clusters = None
 
         self.scores = {
-            row[0]: torch.from_numpy(np.array(row[1], dtype=np.float32), device=device)
+            row[0]: torch.from_numpy(np.array(row[1], dtype=np.float32)).to(device)
             for row in scores.filter(pl.col("ID").is_in(self.all_ids)).iter_rows()
         }
         self.embeddings = {
-            id: torch.from_numpy(np.array(emb[()], dtype=np.float32), device=device) for id, emb in h5py.File(embedding_file).items()
+            id: torch.from_numpy(np.array(emb[()], dtype=np.float32)).to(device) for id, emb in h5py.File(embedding_file).items()
             if id in self.all_ids
         }
         self.nan_masks = {id: ~score.isnan() for id, score in self.scores.items()}
+        self.indices = {i: id for i, id in enumerate(self.all_ids)}
 
     def __len__(self):
         return len(self.cluster_representative_ids)
 
     def __getitem__(self, id: str):
+        if isinstance(id, int):
+            id = self.indices[id]
         embedding = self.embeddings[id].clone()
         scores = self.scores[id].clone()
         mask = self.nan_masks[id].clone()
@@ -71,10 +74,10 @@ class DisprotDataset(Dataset):
         device: str | torch.device,
     ) -> None:
         annotated_sequences = read_score_fasta(score_file)
-        self.scores = {id: torch.from_numpy(np.array(x.annotations, dtype=np.float16)).to(device=device) for id, x in annotated_sequences.items()}
+        self.scores = {id: torch.from_numpy(np.array(x.annotations, dtype=np.float16)).to(device) for id, x in annotated_sequences.items()}
         self.all_ids = list(annotated_sequences.keys())
         self.embeddings = {
-            id: torch.from_numpy(np.array(emb[()], dtype=np.float32), device=device) for id, emb in h5py.File(embedding_file).items()
+            id: torch.from_numpy(np.array(emb[()], dtype=np.float32)).to(device) for id, emb in h5py.File(embedding_file).items()
             if id in self.all_ids
         }
         self.nan_masks = {id: ~score.isnan() for id, score in self.scores.items()}
