@@ -44,11 +44,11 @@ def main(config: DictConfig):
     train_batch_size = config.training.batch_size
     learning_rate = config.training.learning_rate
     max_epochs = config.training.max_epochs
-    load_full_dataset = "load_full_dataset" in config.training
+    load_full_dataset = config.training.load_full_dataset if "load_full_dataset" in config.training else True
 
     # Set up artifacts & directories
     score_type_name = "multiple" if isinstance(score_type, ListConfig) else score_type
-    run_name = f"{datetime.now():%m-%d_%H:%M}_{dataset}_{score_type_name}_{embedding_type}_finetune"
+    run_name = f"{datetime.now():%m-%d_%H:%M}_{dataset}_{score_type_name}_finetune"
 
     project_root = Path.cwd()
     artifact_dir = project_root / "models"
@@ -104,15 +104,19 @@ def main(config: DictConfig):
     metrics = {metric_name: tm.aggregation.MeanMetric().to(model_device) for metric_name in metric_names}
     writer = SummaryWriter(log_dir="runs/" + run_name)
 
-    logger.info("Starting training")
+    best_loss = torch.inf
+    early_stopping_patience = config.training.early_stopping_patience
+
+    logger.info(f"Starting run {run_name}")
     with progress.Progress(
         *progress.Progress.get_default_columns(), progress.TimeElapsedColumn()
     ) as pbar:
-        overall_progress = pbar.add_task("Overall", total=len(train_dl))
+        overall_progress = pbar.add_task("Overall", total=max_epochs)
         for epoch in range(max_epochs):
             for metric_name in metric_names:
                 metrics[metric_name].reset()
 
+            epoch_progress = pbar.add_task(f"Epoch {epoch}", total=len(train_dl))
             for embs, scores, mask in train_dl:
                 model.zero_grad()
                 if not load_full_dataset:
@@ -134,11 +138,22 @@ def main(config: DictConfig):
                 metrics["auc"].update(
                     auc(pred, scores), embs.shape[0]
                 )
+                pbar.advance(epoch_progress)
 
             train_loss = metrics["loss"].compute().item()
             writer.add_scalar("loss/train", train_loss, epoch+1)
             writer.add_scalar("auc/train", metrics["auc"].compute().item(), epoch+1)
+            writer.add_scalar("learning_rate", optimizer.param_groups[0]["lr"], epoch+1)
             scheduler.step(train_loss)
+            pbar.remove_task(epoch_progress)
+            if train_loss < best_loss:
+                best_loss = train_loss
+                epochs_without_improvement = 0
+            else:
+                epochs_without_improvement += 1
+                if epochs_without_improvement == early_stopping_patience:
+                    logging.info("Patience reached, training stopped")
+                    break
             pbar.advance(overall_progress)
 
     model_path = model_dir / f"finetuned_{dataset}_{score_type_name}.pt"
