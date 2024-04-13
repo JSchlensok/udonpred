@@ -1,0 +1,23 @@
+dataset:
+  name: tolerant-final
+  embedding_file: data/embeddings/unfiltered_all.h5
+  trizod_file: /mnt/project/haak/projects/disorder/trizod-resources/datasets/2024-04-11_no_test_sets/tolerant.csv
+  cluster_file: /mnt/project/haak/projects/disorder/trizod-resources/datasets/2024-04-11_no_test_sets/tolerant_rest_clu.tsv
+model:
+  type: fnn
+  params:
+    hidden_layer_sizes:
+    - 256
+    - 64
+    apply_sigmoid: true
+    dropout_rate: 0.4
+embedding_type: prostt5
+score_type: trizod
+training:
+  learning_rate: 0.001
+  n_splits: 1
+  max_epochs: 1000
+  batch_size: 256
+  early_stopping_patience: 10
+validation:
+  batch_size: 1024

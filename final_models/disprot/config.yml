@@ -1,0 +1,22 @@
+dataset:
+  name: tolerant
+  embedding_file: data/embeddings/unfiltered_all_prostt5_res.h5
+  trizod_file: data/tolerant.csv
+  cluster_file: data/clusters/tolerant_rest_clu.tsv
+model:
+  type: fnn
+  params:
+    hidden_layer_sizes:
+    - 256
+    - 64
+    apply_sigmoid: true
+    dropout_rate: 0.4
+embedding_type: prostt5
+score_type: trizod
+training:
+  learning_rate: 0.001
+  n_splits: 1
+  max_epochs: 250
+  batch_size: 256
+validation:
+  batch_size: 1024

@@ -1,0 +1,26 @@
+dataset:
+  name: until_2023_12
+  embedding_file: data/disprot_annotations/prostt5_embeddings.h5
+  data_directory: data/disprot_annotations/references_until_2023_12
+model:
+  type: fnn
+  params:
+    hidden_layer_sizes:
+    - 256
+    - 64
+    apply_sigmoid: true
+    dropout_rate: 0.4
+embedding_type: prostt5
+score_type:
+- disorder_pdb
+- disorder_nox
+- binding
+- linker
+training:
+  learning_rate: 0.001
+  max_epochs: 500
+  batch_size: 64
+  load_full_dataset: true
+  early_stopping_patience: 10
+run_name: 04-13_01:53_tolerant-final_prostt5_fnn_trizod_epoch_1000
+freeze_layers: 2
