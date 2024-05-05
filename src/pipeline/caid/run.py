@@ -104,7 +104,12 @@ def main(
         for id, emb in embeddings.items():
             start_time = dt.now()
             emb = emb.clone().to(device=device, dtype=torch.float64)
+            if model_config["model"]["type"] == "cnn":
+                emb = emb.unsqueeze(0)
             pred = model(emb)
+
+            if model_config["model"]["type"] == "cnn":
+                pred = pred.squeeze()
 
             lines = generate_caid_format(id, pred, sequences[id])
             if write_to_one_file:
